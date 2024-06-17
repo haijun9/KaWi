@@ -24,6 +24,7 @@ class MainWindow(QMainWindow, form_Sniffer):
         self.show()
 
     def initial_setup(self):
+        self.runButton.setEnabled(False)
         header = self.NetworkList.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
@@ -46,14 +47,17 @@ class MainWindow(QMainWindow, form_Sniffer):
         if managed_num not in range(len(sniff.iface_list)) or monitor_num not in range(len(sniff.iface_list)):
             QMessageBox.information(self, "KaWi", "Invalid interface number.")
             return
-        self.managed_Num.setEnabled(False)
-        self.monitor_Num.setEnabled(False)
-        self.setInterfaceButton.setEnabled(False)
-        if sniff.set_two_ifaces_to_use(str(managed_num), str(monitor_num), sniff.iface_list):
+
+        if sniff.set_two_ifaces_to_use(managed_num, monitor_num, sniff.iface_list):
             QMessageBox.information(self, "KaWi", "Setup was successful.")
         else:
             QMessageBox.information(self, "KaWi", "Setup failed.")
+            return
 
+        self.managed_Num.setEnabled(False)
+        self.monitor_Num.setEnabled(False)
+        self.setInterfaceButton.setEnabled(False)
+        self.runButton.setEnabled(True)
         self.commands.clear()
         self.commands.append(r"""
         --------------------------------------------------------------------------------------------------------
@@ -73,10 +77,30 @@ class MainWindow(QMainWindow, form_Sniffer):
             self.managed_Num.setEnabled(True)
             self.monitor_Num.setEnabled(True)
             self.setInterfaceButton.setEnabled(True)
+            self.runButton.setEnabled(False)
+
+            self.commands.clear()
+            self.commands.append("Please Reset Network Interface")
         elif command == 1: # List nearby WiFi networks
-            return
+            self.commands.clear()
+
+            channels = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+            iface = sniff.iface_monitor
+            self.commands.append("[monitor] Start passive scan(from beacon frame)...\n")
+            for n in channels:
+                # Sequential channel switching - Stays for 1 second on each channel
+                current_channel = n
+                self.commands.append(f"[monitor] Current channel: {n}")
+                if not sniff.set_channel(n, iface):
+                    self.commands.append("Cannot change channel. First you need to switch your iface to monitor mode.")
+                # 비콘 프레임은 보통 100ms마다 송신되기 때문에 timeout=0.1~0.2여도 충분할 것 같다.
+                # sniff(iface=iface, monitor=True, timeout=0.5, prn=sniff.handle_scan_AP, store=0)
+
+            self.commands.append("\n[monitor] Done.")
+            self.commands.append("\n\n*Network information you are connected to:")
+            self.commands.append(f"{sniff.connected_network}")
         elif command == 2: # Collect IP and MAC addresses of all hosts(AP and client)
-            return
+            cli.handle_command("2")
         elif command == 3: # (not perfect)Send deauth frames(force disconnect the target client from the network)
             return
         elif command == 4: # (not yet supported)Create a Rogue AP
