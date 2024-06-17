@@ -3,14 +3,16 @@ from PyQt5.QtWidgets import *
 from PyQt5 import uic, QtWidgets
 from PyQt5.QtCore import QTimer
 
-sys.path.append(os.path.dirname(os.path.abspath(__file__)) + '\\scapy')
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'scapy'))
 from scapy.all import *
+from scapy.consts import LINUX, WINDOWS
+import cli, sniff
 
 def resource_path(relative_path):
     base_path = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(base_path, relative_path)
 
-form = resource_path('main.ui')
+form = resource_path('main_GUI.ui')
 form_Sniffer = uic.loadUiType(form)[0]
 
 class MainWindow(QMainWindow, form_Sniffer):
@@ -21,22 +23,78 @@ class MainWindow(QMainWindow, form_Sniffer):
         self.setWindowTitle("KaWi")
         self.show()
 
+    def initial_setup(self):
+        header = self.NetworkList.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+
+        sniff.lookup_iface()
+        for idx in range(len(sniff.iface_list)):
+            iface = sniff.iface_list[idx]
+            row_position = self.NetworkList.rowCount()
+            self.NetworkList.insertRow(row_position)
+            self.NetworkList.setItem(row_position, 0, QTableWidgetItem(f'{idx}'))
+            self.NetworkList.setItem(row_position, 1, QTableWidgetItem(f'{iface.name}'))
+            self.NetworkList.setItem(row_position, 2, QTableWidgetItem(f'{iface.description}'))
+            self.NetworkList.setItem(row_position, 3, QTableWidgetItem(f'{iface.mac}'))
+
+    def set_interface(self):
+        managed_num = self.managed_Num.value()
+        monitor_num = self.monitor_Num.value()
+        if managed_num not in range(len(sniff.iface_list)) or monitor_num not in range(len(sniff.iface_list)):
+            QMessageBox.information(self, "KaWi", "Invalid interface number.")
+            return
+        self.managed_Num.setEnabled(False)
+        self.monitor_Num.setEnabled(False)
+        self.setInterfaceButton.setEnabled(False)
+        if sniff.set_two_ifaces_to_use(str(managed_num), str(monitor_num), sniff.iface_list):
+            QMessageBox.information(self, "KaWi", "Setup was successful.")
+        else:
+            QMessageBox.information(self, "KaWi", "Setup failed.")
+
+        self.commands.clear()
+        self.commands.append(r"""
+        --------------------------------------------------------------------------------------------------------
+            ██╗░░██╗░█████╗░░██╗░░░░░░░██╗██╗
+            ██║░██╔╝██╔══██╗░██║░░██╗░░██║██║
+            █████═╝░███████║░╚██╗████╗██╔╝██║
+            ██╔═██╗░██╔══██║░░████╔═████║░██║
+            ██║░╚██╗██║░░██║░░╚██╔╝░╚██╔╝░██║
+            ╚═╝░░╚═╝╚═╝░░╚═╝░░░╚═╝░░░╚═╝░░╚═╝
+           (Simple prototype GUI for Wi-Fi analysis tool)
+        --------------------------------------------------------------------------------------------------------
+        """)
+
+    def runCommand(self):
+        command = self.command.currentIndex()
+        if command == 0: # Reset network interface to use
+            self.managed_Num.setEnabled(True)
+            self.monitor_Num.setEnabled(True)
+            self.setInterfaceButton.setEnabled(True)
+        elif command == 1: # List nearby WiFi networks
+            return
+        elif command == 2: # Collect IP and MAC addresses of all hosts(AP and client)
+            return
+        elif command == 3: # (not perfect)Send deauth frames(force disconnect the target client from the network)
+            return
+        elif command == 4: # (not yet supported)Create a Rogue AP
+            return
+        elif command == 5: # (not yet supported)Test KRACK - 4-way handshake reinstall PTK-TK(used to encrypt data frames)
+            return
+        elif command == 6: # (not yet supported)Test KRACK - 4-way handshake reinstall GTK(used to encrypt broadcast and multicast frames)
+            return
+        elif command == 7: # (not yet supported)Test KRACK - 4-way handshake reinstall IGTK(used to encrypt broadcast and multicast frames)
+            return
+
+
+    # Upper Lines are Making
     def initUI(self):
-        self.Sniff_chk_monitorMode.stateChanged.connect(self.handleButtonClick)
-        self.Sniff_toggleButton.clicked.connect(self.handleButtonClick)
-        self.Sniff_setButton.clicked.connect(self.move_to_next_tab)
-
-        self.Sniff_toggleButton.clicked.connect(self.add_rows)
-        self.captured_packets.itemSelectionChanged.connect(self.on_row_selected)
-        self.captured_packets.itemSelectionChanged.connect(self.clickInfo)
-
-        self.Spoof_toggleButton.clicked.connect(self.toggleProgress)
-        self.KRACK_toggleButton.clicked.connect(self.toggleProgress)
-        self.Spoof_timer = QTimer(self)
-        self.Spoof_timer.timeout.connect(self.Spoof_updateProgress)
-        self.KRACK_timer = QTimer(self)
-        self.KRACK_timer.timeout.connect(self.KRACK_updateProgress)
-        self.progress_value = 0
+        self.initial_setup()
+        self.setInterfaceButton.clicked.connect(self.set_interface)
+        self.runButton.clicked.connect(self.runCommand)
+    # Lower Lines are Sample Codes
 
     def toggleProgress(self):
         sender = self.sender()  # 이벤트를 발생시킨 위젯 확인
@@ -128,88 +186,11 @@ class MainWindow(QMainWindow, form_Sniffer):
         next_index = (current_index + 1) % self.tabs.count()
         self.tabs.setCurrentIndex(next_index)
 
-    def add_rows(self):
-        row_position = self.captured_packets.rowCount()
-        self.captured_packets.insertRow(row_position)
-
-        self.captured_packets.setItem(row_position, 0, QTableWidgetItem("No"))
-        self.captured_packets.setItem(row_position, 1, QTableWidgetItem("Time"))
-        self.captured_packets.setItem(row_position, 2, QTableWidgetItem("source"))
-        self.captured_packets.setItem(row_position, 3, QTableWidgetItem("Dest"))
-        self.captured_packets.setItem(row_position, 4, QTableWidgetItem("Protocol"))
-        self.captured_packets.setItem(row_position, 5, QTableWidgetItem("Length"))
-        self.captured_packets.setItem(row_position, 6, QTableWidgetItem("Content"))
-
     def on_row_selected(self):
         selected_indexes = self.captured_packets.selectionModel().selectedIndexes()
         if selected_indexes:
             selected_row = selected_indexes[0].row()
             QMessageBox.information(self, "Packet", f"{selected_row}")
-
-    def clickInfo(self):
-        row = self.captured_packets.currentRow()
-        # packet = scapy.layers.l2.Ether(p.encode('Windows-1252'))
-
-        no = self.captured_packets.item(row, 0).text()
-        time = self.captured_packets.item(row, 1).text()
-        src = self.captured_packets.item(row, 2).text()
-        dst = self.captured_packets.item(row, 3).text()
-        protocol = self.captured_packets.item(row, 4).text()
-        length = self.captured_packets.item(row, 5).text()
-        content = self.captured_packets.item(row, 6).text()
-
-        # iface = self.iface
-        # import time
-        # timeformat = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(packet.time))
-
-        self.PacketInfo.clear()
-        self.PacketInfo.setColumnCount(1)
-
-        # Frame
-        Frame = QtWidgets.QTreeWidgetItem(self.PacketInfo)
-        Frame.setText(0, 'Frame %s：%s bytes on %s' % (no, length, "Realtek"))
-        FrameIface = QtWidgets.QTreeWidgetItem(Frame)
-        FrameIface.setText(0, '장비명 : something')
-        FrameArrivalTime = QtWidgets.QTreeWidgetItem(Frame)
-        FrameArrivalTime.setText(0, '도착 시간 : 00:00')
-        FrameTime = QtWidgets.QTreeWidgetItem(Frame)
-        FrameTime.setText(0, '첫 번째 프레임 도착 시간 : ')
-        FrameNumber = QtWidgets.QTreeWidgetItem(Frame)
-        FrameNumber.setText(0, '번호 : %s' % no)
-        FrameLength = QtWidgets.QTreeWidgetItem(Frame)
-        FrameLength.setText(0, '길이：%s' % length)
-
-        # Ethernet
-        Ethernet = QtWidgets.QTreeWidgetItem(self.PacketInfo)
-        Ethernet.setText(0, 'Ethernet，출발 MAC 주소(src)：' + "packet.src" + '，목적 MAC 주소(dst)：' + "packet.dst")
-        EthernetDst = QtWidgets.QTreeWidgetItem(Ethernet)
-        EthernetDst.setText(0, '목적 MAC 주소(dst)：' + "packet.dst")
-        EthernetSrc = QtWidgets.QTreeWidgetItem(Ethernet)
-        EthernetSrc.setText(0, '출발 MAC 주소(src)：' + "packet.src")
-
-        # self.textBrowserRaw.clear()
-        # if packet.haslayer('Raw'):
-        #     # raw = QtWidgets.QTreeWidgetItem(self.treeWidget)
-        #     # raw.setText(0,'Raw：%s' % packet[Raw].load.decode('utf-8','ignore'))
-        #     self.textBrowserRaw.append('Raw：%s' % packet[Raw].load.decode('utf-8', 'ignore'))
-        #
-        # if packet.haslayer('Padding'):
-        #     # padding = QtWidgets.QTreeWidgetItem(self.treeWidget)
-        #     # padding.setText(0,'Padding：%s' % packet[Padding].load.decode('utf-8','ignore'))
-        #     self.textBrowserRaw.append('Padding：%s' % packet[Padding].load.decode('utf-8', 'ignore'))
-        #
-        # self.textBrowserDump.clear()
-        # f = open('hexdump.tmp', 'w')
-        # old = sys.stdout
-        # sys.stdout = f
-        # hexdump(packet)
-        # sys.stdout = old
-        # f.close()
-        # f = open('hexdump.tmp', 'r')
-        # content = f.read()
-        # self.textBrowserDump.append(content)
-        # f.close()
-        # os.remove('hexdump.tmp')
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
